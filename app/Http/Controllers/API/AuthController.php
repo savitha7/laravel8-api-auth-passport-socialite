@@ -8,9 +8,13 @@ use App\Models\User;
 use Validator;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Auth;
+use Laravel\Socialite\Facades\Socialite;
+use App\Services\SocialAccountsService;
 
 class AuthController extends ApiBaseController
 {
+    public const PROVIDERS = ['google'];
+
     /**
      * Register api
      *
@@ -60,5 +64,49 @@ class AuthController extends ApiBaseController
         $success['expires_in'] = now()->addDays(15);
    
         return $this->sendResponse($success, 'Login successfully.');
+    }
+
+    /**
+     * Create a new controller instance.
+     *
+     * @return void
+     */
+    public function redirectToProvider($provider)
+    {
+        if(!in_array($provider, self::PROVIDERS)){
+            return $this->sendError(self::NOT_FOUND);       
+        }
+
+        $success['provider_redirect'] = Socialite::driver($provider)->stateless()->redirect()->getTargetUrl();
+   
+        return $this->sendResponse($success, "Provider '".$provider."' redirect url.");
+    }
+        
+    /**
+     * Create a new controller instance.
+     *
+     * @return void
+     */
+    public function handleProviderCallback($provider)
+    {
+        if(!in_array($provider, self::PROVIDERS)){
+            return $this->sendError(self::NOT_FOUND);       
+        }
+
+        try {
+            $providerUser = Socialite::driver($provider)->stateless()->user();
+            
+            if ($providerUser) {
+                $user = (new SocialAccountsService())->findOrCreate($providerUser, $provider);
+
+                $token = $user->createToken(env('API_AUTH_TOKEN_PASSPORT_SOCIAL'))->accessToken; 
+       
+                return $this->respondWithToken($token);
+                //return redirect('https://my-frontend-domain.com/dashboard?access_token='.$token);
+            }
+
+        } catch (Exception $exception) {
+            return $this->sendError(self::UNAUTHORIZED, null, ['error'=>$e->getMessage()]);
+        }        
     }
 }
